@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 import logging
 
@@ -22,7 +22,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unregister_callback(query, user_id, callback_data)
     elif callback_data.startswith("register_"):
         # Xử lý callback đăng ký kênh
-        await handle_register_callback(query, user_id, callback_data)
+        await handle_register_callback(query, user_id, callback_data, context)
     elif callback_data == "cancel_register":
         # Xử lý callback hủy đăng ký kênh
         await handle_cancel_register_callback(query, context)
@@ -95,14 +95,14 @@ async def handle_unregister_callback(query, user_id, callback_data):
             reply_markup=reply_markup
         )
 
-async def handle_register_callback(query, user_id, callback_data):
+async def handle_register_callback(query, user_id, callback_data, context):
     """Xử lý callback đăng ký kênh"""
     # Lấy ID kênh từ callback data
     channel_id = callback_data.replace("register_", "")
     
     try:
         # Kiểm tra kênh có tồn tại không
-        chat = await query.bot.get_chat(channel_id)
+        chat = await context.bot.get_chat(channel_id)
         
         # Đăng ký kênh cho người dùng
         db.register_channel(user_id, str(chat.id), channel_title=chat.title or channel_id)

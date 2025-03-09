@@ -28,8 +28,15 @@ async def extract_text_from_image(update: Update, context):
                 "- macOS: brew install tesseract tesseract-lang"
             )
         
-        # Lấy file ảnh với kích thước lớn nhất
-        photo = update.message.photo[-1]
+        # Xác định loại tin nhắn (từ người dùng hoặc từ kênh)
+        if update.message:
+            # Tin nhắn từ người dùng
+            photo = update.message.photo[-1]
+        elif update.channel_post:
+            # Tin nhắn từ kênh
+            photo = update.channel_post.photo[-1]
+        else:
+            return "Không thể xác định loại tin nhắn."
         
         # Tạo thư mục tạm để lưu ảnh
         with tempfile.TemporaryDirectory() as temp_dir:

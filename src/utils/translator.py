@@ -1,5 +1,6 @@
 from deep_translator import GoogleTranslator
 import logging
+from langdetect import detect
 
 def translate_text(text, dest_language='vi', src_language=None):
     """
@@ -53,7 +54,7 @@ def translate_text(text, dest_language='vi', src_language=None):
 
 def detect_language(text):
     """
-    Phát hiện ngôn ngữ của văn bản
+    Phát hiện ngôn ngữ của văn bản sử dụng thư viện langdetect
     
     Args:
         text (str): Văn bản cần phát hiện ngôn ngữ
@@ -65,9 +66,8 @@ def detect_language(text):
         return None
     
     try:
-        # Sử dụng GoogleTranslator để phát hiện ngôn ngữ
-        translator = GoogleTranslator(source='auto', target='en')
-        detected_lang = translator.detect_language(text)
+        # Sử dụng langdetect để phát hiện ngôn ngữ
+        detected_lang = detect(text)
         return detected_lang
     except Exception as e:
         logging.error(f"Lỗi khi phát hiện ngôn ngữ: {e}")

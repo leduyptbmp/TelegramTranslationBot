@@ -236,51 +236,73 @@ async def handle_forwarded_photo(update, context, target_language, source_id, so
         reply_to_message_id=update.message.message_id
     )
     
+    # Kiểm tra xem tin nhắn có caption không
+    caption = update.message.caption
+    
     # Trích xuất văn bản từ hình ảnh
     text = await extract_text_from_image(update, context)
     
-    # Nếu không thể trích xuất văn bản
-    if text.startswith("Không thể trích xuất") or text.startswith("Có lỗi xảy ra"):
+    # Nếu không thể trích xuất văn bản và không có caption
+    if (text.startswith("Không thể trích xuất") or text.startswith("Có lỗi xảy ra")) and not caption:
         await processing_message.edit_text(text)
         return
     
+    # Nếu không thể trích xuất văn bản nhưng có caption
+    if (text.startswith("Không thể trích xuất") or text.startswith("Có lỗi xảy ra")) and caption:
+        text = ""  # Đặt text thành chuỗi rỗng để chỉ dịch caption
+    
+    # Chuẩn bị nội dung để dịch
+    content_to_translate = ""
+    
+    # Nếu có văn bản trích xuất từ hình ảnh
+    if text and not text.startswith("Không thể trích xuất") and not text.startswith("Có lỗi xảy ra"):
+        content_to_translate += f"📝 *Văn bản trích xuất từ hình ảnh của {source_title}:*\n\n{text}\n\n"
+    
+    # Nếu có caption
+    if caption:
+        content_to_translate += f"📝 *Caption từ {source_title}:*\n\n{caption}\n\n"
+    
     # Cập nhật tin nhắn đang xử lý
     await processing_message.edit_text(
-        f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n⏳ Đang dịch..."
+        f"{content_to_translate}⏳ Đang dịch..."
     )
     
-    # Dịch văn bản
-    translation = translate_text(text, dest_language=target_language)
+    # Dịch văn bản từ hình ảnh (nếu có)
+    image_translation = None
+    if text and not text.startswith("Không thể trích xuất") and not text.startswith("Có lỗi xảy ra"):
+        image_translation = translate_text(text, dest_language=target_language)
     
-    # Nếu có lỗi khi dịch
-    if "error" in translation:
-        await processing_message.edit_text(
-            f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n❌ Có lỗi xảy ra khi dịch: {translation['error']}"
-        )
-        return
+    # Dịch caption (nếu có)
+    caption_translation = None
+    if caption:
+        caption_translation = translate_text(caption, dest_language=target_language)
     
-    # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
-    if translation["source_language"] == target_language:
-        if not is_registered:
-            # Hiển thị nút đăng ký nếu kênh chưa được đăng ký
-            keyboard = [[
-                InlineKeyboardButton("📌 Đăng ký kênh này", callback_data=f"register_{source_id}")
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await processing_message.edit_text(
-                f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n"
-                f"Văn bản đã ở ngôn ngữ đích ({target_language}).\n\n"
-                f"Bạn có muốn đăng ký kênh này để tự động dịch tin nhắn mới?",
-                parse_mode="Markdown",
-                reply_markup=reply_markup
-            )
+    # Chuẩn bị kết quả dịch
+    translation_result = ""
+    
+    # Thêm kết quả dịch văn bản từ hình ảnh (nếu có)
+    if image_translation and "error" not in image_translation:
+        if image_translation["source_language"] != target_language:
+            translation_result += f"🔄 *Bản dịch văn bản từ hình ảnh ({image_translation['source_language']} → {target_language}):*\n\n{image_translation['translated_text']}\n\n"
         else:
-            await processing_message.edit_text(
-                f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n"
-                f"Văn bản đã ở ngôn ngữ đích ({target_language}).",
-                parse_mode="Markdown"
-            )
+            translation_result += f"📝 *Văn bản trích xuất từ hình ảnh đã ở ngôn ngữ đích ({target_language})*\n\n"
+    elif image_translation and "error" in image_translation:
+        translation_result += f"❌ Có lỗi xảy ra khi dịch văn bản từ hình ảnh: {image_translation['error']}\n\n"
+    
+    # Thêm kết quả dịch caption (nếu có)
+    if caption_translation and "error" not in caption_translation:
+        if caption_translation["source_language"] != target_language:
+            translation_result += f"🔄 *Bản dịch caption ({caption_translation['source_language']} → {target_language}):*\n\n{caption_translation['translated_text']}"
+        else:
+            translation_result += f"📝 *Caption đã ở ngôn ngữ đích ({target_language})*"
+    elif caption_translation and "error" in caption_translation:
+        translation_result += f"❌ Có lỗi xảy ra khi dịch caption: {caption_translation['error']}"
+    
+    # Nếu không có kết quả dịch nào
+    if not translation_result:
+        await processing_message.edit_text(
+            "❌ Không thể dịch nội dung. Vui lòng thử lại với hình ảnh khác hoặc thêm caption."
+        )
         return
     
     # Gửi kết quả dịch
@@ -292,16 +314,14 @@ async def handle_forwarded_photo(update, context, target_language, source_id, so
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await processing_message.edit_text(
-            f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n"
-            f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}\n\n"
+            f"{content_to_translate}{translation_result}\n\n"
             f"Bạn có muốn đăng ký kênh này để tự động dịch tin nhắn mới?",
             parse_mode="Markdown",
             reply_markup=reply_markup
         )
     else:
         await processing_message.edit_text(
-            f"📝 *Văn bản trích xuất từ {source_title}:*\n\n{text}\n\n"
-            f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+            f"{content_to_translate}{translation_result}",
             parse_mode="Markdown"
         )
 
@@ -369,6 +389,9 @@ async def handle_channel_photo(update, context, channel):
     # Lấy danh sách người dùng đã đăng ký kênh
     subscribers = channel.get("subscribers", [])
     
+    # Kiểm tra xem tin nhắn có caption không
+    caption = update.channel_post.caption
+    
     # Trích xuất văn bản từ hình ảnh
     try:
         # Lấy file ảnh với kích thước lớn nhất
@@ -391,7 +414,9 @@ async def handle_channel_photo(update, context, channel):
             
             # Xóa khoảng trắng thừa và kiểm tra nếu văn bản rỗng
             text = text.strip()
-            if not text:
+            
+            # Nếu không có văn bản trích xuất và không có caption, bỏ qua
+            if not text and not caption:
                 return
             
             # Dịch tin nhắn cho từng người dùng
@@ -405,11 +430,30 @@ async def handle_channel_photo(update, context, channel):
                 # Lấy ngôn ngữ dịch của người dùng
                 target_language = user.get("language_code", DEFAULT_LANGUAGE)
                 
-                # Dịch văn bản
-                translation = translate_text(text, dest_language=target_language)
+                # Chuẩn bị nội dung để hiển thị
+                content_to_display = ""
+                translation_result = ""
                 
-                # Nếu có lỗi khi dịch hoặc ngôn ngữ nguồn giống ngôn ngữ đích, bỏ qua
-                if "error" in translation or translation["source_language"] == target_language:
+                # Dịch văn bản từ hình ảnh (nếu có)
+                if text:
+                    content_to_display += f"📝 *Văn bản trích xuất từ hình ảnh:*\n\n{text}\n\n"
+                    image_translation = translate_text(text, dest_language=target_language)
+                    
+                    # Nếu dịch thành công và ngôn ngữ nguồn khác ngôn ngữ đích
+                    if "error" not in image_translation and image_translation["source_language"] != target_language:
+                        translation_result += f"🔄 *Bản dịch văn bản từ hình ảnh ({image_translation['source_language']} → {target_language}):*\n\n{image_translation['translated_text']}\n\n"
+                
+                # Dịch caption (nếu có)
+                if caption:
+                    content_to_display += f"📝 *Caption:*\n\n{caption}\n\n"
+                    caption_translation = translate_text(caption, dest_language=target_language)
+                    
+                    # Nếu dịch thành công và ngôn ngữ nguồn khác ngôn ngữ đích
+                    if "error" not in caption_translation and caption_translation["source_language"] != target_language:
+                        translation_result += f"🔄 *Bản dịch caption ({caption_translation['source_language']} → {target_language}):*\n\n{caption_translation['translated_text']}"
+                
+                # Nếu không có kết quả dịch nào, bỏ qua
+                if not translation_result:
                     continue
                 
                 # Gửi kết quả dịch cho người dùng
@@ -425,8 +469,7 @@ async def handle_channel_photo(update, context, channel):
                     # Gửi văn bản trích xuất và bản dịch
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"📝 *Văn bản trích xuất:*\n\n{text}\n\n"
-                        f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+                        text=f"{content_to_display}{translation_result}",
                         parse_mode="Markdown",
                         reply_to_message_id=sent_photo.message_id
                     )
