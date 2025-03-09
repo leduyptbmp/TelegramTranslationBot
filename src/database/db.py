@@ -1,5 +1,5 @@
 from pymongo import MongoClient
-from src.config import MONGODB_URI
+from src.config import MONGODB_URI, DEFAULT_LANGUAGE, DEFAULT_INTERFACE_LANGUAGE
 
 # Kết nối đến MongoDB
 client = MongoClient(MONGODB_URI)
@@ -13,21 +13,26 @@ def get_user(user_id):
     """Lấy thông tin người dùng từ database"""
     return users.find_one({"user_id": user_id})
 
-def create_user(user_id, username=None, first_name=None, language_code="vi"):
+def create_user(user_id, username=None, first_name=None, language_code=DEFAULT_LANGUAGE, interface_language=DEFAULT_INTERFACE_LANGUAGE):
     """Tạo người dùng mới trong database"""
     user = {
         "user_id": user_id,
         "username": username,
         "first_name": first_name,
         "language_code": language_code,
+        "interface_language": interface_language,
         "registered_channels": []
     }
     users.update_one({"user_id": user_id}, {"$set": user}, upsert=True)
     return user
 
 def update_user_language(user_id, language_code):
-    """Cập nhật ngôn ngữ cho người dùng"""
+    """Cập nhật ngôn ngữ dịch cho người dùng"""
     users.update_one({"user_id": user_id}, {"$set": {"language_code": language_code}})
+
+def update_user_interface_language(user_id, interface_language):
+    """Cập nhật ngôn ngữ giao tiếp cho người dùng"""
+    users.update_one({"user_id": user_id}, {"$set": {"interface_language": interface_language}})
 
 def get_channel(channel_id):
     """Lấy thông tin kênh từ database"""

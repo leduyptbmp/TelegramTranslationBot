@@ -3,7 +3,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 
 from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers.command_handlers import (
-    start_command, help_command, setlang_command,
+    start_command, help_command, setlang_command, setinterfacelang_command,
     register_command, channels_command, unregister_command,
     register_channel_input, cancel_command, WAITING_FOR_CHANNEL
 )
@@ -31,6 +31,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("setlang", setlang_command))
+    application.add_handler(CommandHandler("setinterfacelang", setinterfacelang_command))
     application.add_handler(CommandHandler("channels", channels_command))
     application.add_handler(CommandHandler("unregister", unregister_command))
     
@@ -47,15 +48,15 @@ def main():
     # Đăng ký callback handler cho các nút inline
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # Đăng ký message handler cho tin nhắn thông thường và hình ảnh
+    # Đăng ký message handler cho tin nhắn thông thường, hình ảnh và video
     application.add_handler(MessageHandler(
-        (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, 
+        (filters.TEXT | filters.PHOTO | filters.VIDEO) & ~filters.COMMAND, 
         handle_message
     ))
     
     # Đăng ký channel post handler cho tin nhắn từ kênh
     application.add_handler(MessageHandler(
-        filters.ChatType.CHANNEL & (filters.TEXT | filters.PHOTO), 
+        filters.ChatType.CHANNEL & (filters.TEXT | filters.PHOTO | filters.VIDEO), 
         handle_channel_post
     ))
     

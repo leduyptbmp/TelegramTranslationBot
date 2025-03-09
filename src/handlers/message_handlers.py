@@ -7,9 +7,9 @@ from PIL import Image
 import pytesseract
 
 from src.database import db
-from src.utils.translator import translate_text
+from src.utils.translator import translate_text, get_language_name
 from src.utils.ocr import extract_text_from_image
-from src.config import DEFAULT_LANGUAGE
+from src.config import DEFAULT_LANGUAGE, DEFAULT_INTERFACE_LANGUAGE, SUPPORTED_LANGUAGES, BOT_INTERFACE_LANGUAGES
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý tin nhắn thông thường"""
@@ -24,29 +24,68 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Nếu người dùng chưa tồn tại, tạo mới
     if not user:
+        # Xác định ngôn ngữ giao tiếp từ ngôn ngữ của người dùng nếu được hỗ trợ
+        user_lang = update.effective_user.language_code
+        interface_lang = user_lang if user_lang in BOT_INTERFACE_LANGUAGES else DEFAULT_INTERFACE_LANGUAGE
+        
         user = db.create_user(
             user_id=user_id,
             username=update.effective_user.username,
             first_name=update.effective_user.first_name,
-            language_code=update.effective_user.language_code or DEFAULT_LANGUAGE
+            language_code=DEFAULT_LANGUAGE,
+            interface_language=interface_lang
         )
     
-    # Lấy ngôn ngữ dịch của người dùng
+    # Lấy ngôn ngữ dịch và giao tiếp của người dùng
     target_language = user.get("language_code", DEFAULT_LANGUAGE)
+    interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+    
+    # Kiểm tra xem người dùng đã cài đặt ngôn ngữ đích chưa
+    if not target_language:
+        # Tạo nút cài đặt ngôn ngữ
+        keyboard = [[
+            InlineKeyboardButton("Cài đặt ngôn ngữ / Set language", callback_data="setlang_prompt")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Hiển thị thông báo theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                "⚠️ You haven't set your target translation language yet.\n\n"
+                "Please use the /setlang command to set your preferred translation language.",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                "⚠️ Bạn chưa cài đặt ngôn ngữ dịch mục tiêu.\n\n"
+                "Vui lòng sử dụng lệnh /setlang để cài đặt ngôn ngữ dịch ưa thích của bạn.",
+                reply_markup=reply_markup
+            )
+        return
     
     # Kiểm tra loại tin nhắn
     if update.message.photo:
         # Xử lý tin nhắn hình ảnh
         await handle_photo_message(update, context, target_language)
         return
+    elif update.message.video:
+        # Xử lý tin nhắn video (chỉ dịch caption)
+        await handle_video_message(update, context, target_language, interface_language)
+        return
     
     # Lấy nội dung tin nhắn
     text = update.message.text
     
     if not text:
-        await update.message.reply_text(
-            "Tôi có thể dịch tin nhắn văn bản hoặc hình ảnh. Vui lòng gửi tin nhắn văn bản, hình ảnh hoặc forward tin nhắn từ kênh/bot khác."
-        )
+        # Hiển thị thông báo theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                "I can translate text messages, images, or videos with captions. Please send a text message, image, video, or forward a message from another channel/bot."
+            )
+        else:
+            await update.message.reply_text(
+                "Tôi có thể dịch tin nhắn văn bản, hình ảnh, hoặc video có caption. Vui lòng gửi tin nhắn văn bản, hình ảnh, video hoặc forward tin nhắn từ kênh/bot khác."
+            )
         return
     
     # Dịch tin nhắn
@@ -54,23 +93,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Nếu có lỗi khi dịch
     if "error" in translation:
-        await update.message.reply_text(
-            f"❌ Có lỗi xảy ra khi dịch tin nhắn: {translation['error']}"
-        )
+        # Hiển thị thông báo lỗi theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"❌ An error occurred while translating the message: {translation['error']}"
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Có lỗi xảy ra khi dịch tin nhắn: {translation['error']}"
+            )
         return
     
     # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
     if translation["source_language"] == target_language:
-        await update.message.reply_text(
-            f"Tin nhắn đã ở ngôn ngữ đích ({target_language})."
-        )
+        # Hiển thị thông báo theo ngôn ngữ giao tiếp
+        target_lang_name = get_language_name(target_language)
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"The message is already in your target language ({target_lang_name})."
+            )
+        else:
+            await update.message.reply_text(
+                f"Tin nhắn đã ở ngôn ngữ đích của bạn ({target_lang_name})."
+            )
         return
     
+    # Lấy tên ngôn ngữ đầy đủ
+    source_lang_name = get_language_name(translation["source_language"])
+    target_lang_name = get_language_name(target_language)
+    
     # Gửi kết quả dịch
-    await update.message.reply_text(
-        f"🔄 *Bản dịch:*\n\n{translation['translated_text']}",
-        parse_mode="Markdown"
-    )
+    if interface_language == "en":
+        await update.message.reply_text(
+            f"🔄 *Translation from {source_lang_name} to {target_lang_name}:*\n\n{translation['translated_text']}",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"🔄 *Bản dịch từ {source_lang_name} sang {target_lang_name}:*\n\n{translation['translated_text']}",
+            parse_mode="Markdown"
+        )
 
 async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE, target_language):
     """Xử lý tin nhắn hình ảnh"""
@@ -116,6 +178,71 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown"
     )
 
+async def handle_video_message(update: Update, context: ContextTypes.DEFAULT_TYPE, target_language, interface_language):
+    """Xử lý tin nhắn video (chỉ dịch caption)"""
+    # Lấy caption của video
+    caption = update.message.caption
+    
+    # Nếu không có caption
+    if not caption:
+        # Hiển thị thông báo theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                "The video doesn't have any caption to translate. I can only translate captions of videos."
+            )
+        else:
+            await update.message.reply_text(
+                "Video không có caption để dịch. Tôi chỉ có thể dịch caption của video."
+            )
+        return
+    
+    # Dịch caption
+    translation = translate_text(caption, dest_language=target_language)
+    
+    # Nếu có lỗi khi dịch
+    if "error" in translation:
+        # Hiển thị thông báo lỗi theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"❌ An error occurred while translating the caption: {translation['error']}"
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Có lỗi xảy ra khi dịch caption: {translation['error']}"
+            )
+        return
+    
+    # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
+    if translation["source_language"] == target_language:
+        # Hiển thị thông báo theo ngôn ngữ giao tiếp
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"The caption is already in your target language ({get_language_name(target_language)})."
+            )
+        else:
+            await update.message.reply_text(
+                f"Caption đã ở ngôn ngữ đích của bạn ({get_language_name(target_language)})."
+            )
+        return
+    
+    # Lấy tên ngôn ngữ
+    source_lang_name = get_language_name(translation["source_language"])
+    target_lang_name = get_language_name(target_language)
+    
+    # Gửi kết quả dịch
+    if interface_language == "en":
+        await update.message.reply_text(
+            f"📝 *Original Caption:*\n\n{caption}\n\n"
+            f"🔄 *Translation from {source_lang_name} to {target_lang_name}:*\n\n{translation['translated_text']}",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"📝 *Caption gốc:*\n\n{caption}\n\n"
+            f"🔄 *Bản dịch từ {source_lang_name} sang {target_lang_name}:*\n\n{translation['translated_text']}",
+            parse_mode="Markdown"
+        )
+
 async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý tin nhắn được forward"""
     # Lấy thông tin người dùng
@@ -124,15 +251,21 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
     
     # Nếu người dùng chưa tồn tại, tạo mới
     if not user:
+        # Xác định ngôn ngữ giao tiếp từ ngôn ngữ của người dùng nếu được hỗ trợ
+        user_lang = update.effective_user.language_code
+        interface_lang = user_lang if user_lang in BOT_INTERFACE_LANGUAGES else DEFAULT_INTERFACE_LANGUAGE
+        
         user = db.create_user(
             user_id=user_id,
             username=update.effective_user.username,
             first_name=update.effective_user.first_name,
-            language_code=update.effective_user.language_code or DEFAULT_LANGUAGE
+            language_code=DEFAULT_LANGUAGE,
+            interface_language=interface_lang
         )
     
-    # Lấy ngôn ngữ dịch của người dùng
+    # Lấy ngôn ngữ dịch và giao tiếp của người dùng
     target_language = user.get("language_code", DEFAULT_LANGUAGE)
+    interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
     
     # Lấy thông tin kênh/người dùng gốc
     forward_from_chat = update.message.forward_from_chat
@@ -149,9 +282,14 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         source_title = forward_from.first_name or source_id
     else:
         # Không xác định được nguồn
-        await update.message.reply_text(
-            "Không thể xác định nguồn của tin nhắn được forward."
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                "Unable to identify the source of the forwarded message."
+            )
+        else:
+            await update.message.reply_text(
+                "Không thể xác định nguồn của tin nhắn được forward."
+            )
         return
     
     # Kiểm tra xem kênh đã được đăng ký chưa
@@ -163,14 +301,23 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         # Xử lý tin nhắn hình ảnh được forward
         await handle_forwarded_photo(update, context, target_language, source_id, source_title, is_registered)
         return
+    elif update.message.video:
+        # Xử lý tin nhắn video được forward
+        await handle_forwarded_video(update, context, target_language, interface_language, source_id, source_title, is_registered)
+        return
     
     # Lấy nội dung tin nhắn
     text = update.message.text
     
     if not text:
-        await update.message.reply_text(
-            "Tôi chỉ có thể dịch tin nhắn văn bản hoặc hình ảnh. Vui lòng forward tin nhắn văn bản hoặc hình ảnh từ kênh/bot khác."
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                "I can only translate text messages, images, or videos with captions. Please forward a text message, image, or video with caption from another channel/bot."
+            )
+        else:
+            await update.message.reply_text(
+                "Tôi chỉ có thể dịch tin nhắn văn bản, hình ảnh, hoặc video có caption. Vui lòng forward tin nhắn văn bản, hình ảnh, hoặc video có caption từ kênh/bot khác."
+            )
         return
     
     # Dịch tin nhắn
@@ -178,10 +325,16 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
     
     # Nếu có lỗi khi dịch
     if "error" in translation:
-        await update.message.reply_text(
-            f"❌ Có lỗi xảy ra khi dịch tin nhắn: {translation['error']}",
-            reply_to_message_id=update.message.message_id
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"❌ An error occurred while translating the message: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Có lỗi xảy ra khi dịch tin nhắn: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
         return
     
     # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
@@ -193,17 +346,31 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(
-                f"Tin nhắn đã ở ngôn ngữ đích ({target_language}).\n\n"
-                f"Bạn có muốn đăng ký kênh {source_title} để tự động dịch tin nhắn mới?",
-                reply_markup=reply_markup,
-                reply_to_message_id=update.message.message_id
-            )
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The message is already in the target language ({get_language_name(target_language)}).\n\n"
+                    f"Do you want to register the channel {source_title} to automatically translate new messages?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Tin nhắn đã ở ngôn ngữ đích ({get_language_name(target_language)}).\n\n"
+                    f"Bạn có muốn đăng ký kênh {source_title} để tự động dịch tin nhắn mới?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
         else:
-            await update.message.reply_text(
-                f"Tin nhắn đã ở ngôn ngữ đích ({target_language}).",
-                reply_to_message_id=update.message.message_id
-            )
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The message is already in the target language ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Tin nhắn đã ở ngôn ngữ đích ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
         return
     
     # Gửi kết quả dịch
@@ -214,19 +381,155 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"🔄 *Bản dịch từ {source_title}:*\n\n{translation['translated_text']}\n\n"
-            f"Bạn có muốn đăng ký kênh này để tự động dịch tin nhắn mới?",
-            parse_mode="Markdown",
-            reply_markup=reply_markup,
-            reply_to_message_id=update.message.message_id
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"🔄 *Translation from {source_title}:*\n\n"
+                f"From {get_language_name(translation['source_language'])} to {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"🔄 *Bản dịch từ {source_title}:*\n\n"
+                f"Từ {get_language_name(translation['source_language'])} sang {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
     else:
-        await update.message.reply_text(
-            f"🔄 *Bản dịch từ {source_title}:*\n\n{translation['translated_text']}",
-            parse_mode="Markdown",
-            reply_to_message_id=update.message.message_id
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"🔄 *Translation from {source_title}:*\n\n"
+                f"From {get_language_name(translation['source_language'])} to {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"🔄 *Bản dịch từ {source_title}:*\n\n"
+                f"Từ {get_language_name(translation['source_language'])} sang {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
+
+async def handle_forwarded_video(update, context, target_language, interface_language, source_id, source_title, is_registered):
+    """Xử lý tin nhắn video được forward"""
+    # Lấy caption của video
+    caption = update.message.caption
+    
+    # Nếu không có caption
+    if not caption:
+        if interface_language == "en":
+            await update.message.reply_text(
+                "The forwarded video doesn't have any caption to translate.",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                "Video được forward không có caption để dịch.",
+                reply_to_message_id=update.message.message_id
+            )
+        return
+    
+    # Dịch caption
+    translation = translate_text(caption, dest_language=target_language)
+    
+    # Nếu có lỗi khi dịch
+    if "error" in translation:
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"❌ An error occurred while translating the caption: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Có lỗi xảy ra khi dịch caption: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
+        return
+    
+    # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
+    if translation["source_language"] == target_language:
+        if not is_registered:
+            # Hiển thị nút đăng ký nếu kênh chưa được đăng ký
+            keyboard = [[
+                InlineKeyboardButton("📌 Đăng ký kênh này", callback_data=f"register_{source_id}")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The caption is already in the target language ({get_language_name(target_language)}).\n\n"
+                    f"Do you want to register the channel {source_title} to automatically translate new messages?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Caption đã ở ngôn ngữ đích ({get_language_name(target_language)}).\n\n"
+                    f"Bạn có muốn đăng ký kênh {source_title} để tự động dịch tin nhắn mới?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+        else:
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The caption is already in the target language ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Caption đã ở ngôn ngữ đích ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
+        return
+    
+    # Gửi kết quả dịch
+    if not is_registered:
+        # Hiển thị nút đăng ký nếu kênh chưa được đăng ký
+        keyboard = [[
+            InlineKeyboardButton("📌 Đăng ký kênh này", callback_data=f"register_{source_id}")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"📝 *Original Caption from {source_title}:*\n\n{caption}\n\n"
+                f"🔄 *Translation ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}\n\n"
+                f"Do you want to register this channel to automatically translate new messages?",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"📝 *Caption gốc từ {source_title}:*\n\n{caption}\n\n"
+                f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}\n\n"
+                f"Bạn có muốn đăng ký kênh này để tự động dịch tin nhắn mới?",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
+    else:
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"📝 *Original Caption from {source_title}:*\n\n{caption}\n\n"
+                f"🔄 *Translation ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"📝 *Caption gốc từ {source_title}:*\n\n{caption}\n\n"
+                f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
 
 async def handle_forwarded_photo(update, context, target_language, source_id, source_title, is_registered):
     """Xử lý tin nhắn hình ảnh được forward"""
@@ -331,23 +634,35 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     channel_id = str(update.channel_post.chat.id)
     channel = db.get_channel(channel_id)
     
-    # Nếu kênh không được đăng ký, bỏ qua
+    # Log thông tin kênh
+    logging.info(f"Received message from channel: {channel_id}")
+
+    # Nếu kênh không được đăng ký, bỏ qua và log
     if not channel:
+        logging.warning(f"Channel {channel_id} is not registered.")
         return
-    
+
     # Lấy danh sách người dùng đã đăng ký kênh
     subscribers = channel.get("subscribers", [])
     
-    # Nếu không có người dùng nào đăng ký, bỏ qua
+    # Nếu không có người dùng nào đăng ký, bỏ qua và log
     if not subscribers:
+        logging.warning(f"No subscribers for channel {channel_id}.")
         return
     
     # Kiểm tra loại tin nhắn
     if update.channel_post.photo:
-        # Xử lý tin nhắn hình ảnh từ kênh
+        logging.info(f"Processing photo message from channel {channel_id}.")
         await handle_channel_photo(update, context, channel)
         return
+    elif update.channel_post.video:
+        logging.info(f"Processing video message from channel {channel_id}.")
+        await handle_channel_video(update, context, channel)
+        return
     
+    # Log nội dung tin nhắn
+    logging.info(f"Processing text message from channel {channel_id}.")
+
     # Lấy nội dung tin nhắn
     text = update.channel_post.text
     
@@ -360,11 +675,16 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
         user = db.get_user(user_id)
         
         if not user:
+            logging.warning(f"User {user_id} not found in database.")
             continue
         
-        # Lấy ngôn ngữ dịch của người dùng
+        # Lấy ngôn ngữ dịch và giao tiếp của người dùng
         target_language = user.get("language_code", DEFAULT_LANGUAGE)
+        interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
         
+        # Log ngôn ngữ dịch
+        logging.info(f"Translating message for user {user_id} to {target_language}.")
+
         # Dịch tin nhắn
         translation = translate_text(text, dest_language=target_language)
         
@@ -374,13 +694,20 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Gửi kết quả dịch cho người dùng
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"🔄 *Bản dịch từ {channel.get('title', channel_id)}:*\n\n{translation['translated_text']}",
-                parse_mode="Markdown"
-            )
+            if interface_language == "en":
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🔄 *Translation from {channel.get('title', channel_id)}:*{translation['translated_text']}",
+                    parse_mode="Markdown"
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🔄 *Bản dịch từ {channel.get('title', channel_id)}:*{translation['translated_text']}",
+                    parse_mode="Markdown"
+                )
         except Exception as e:
-            logging.error(f"Lỗi khi gửi tin nhắn đến người dùng {user_id}: {e}")
+            logging.error(f"Error sending message to user {user_id}: {e}")
 
 async def handle_channel_photo(update, context, channel):
     """Xử lý tin nhắn hình ảnh từ kênh"""
@@ -427,8 +754,9 @@ async def handle_channel_photo(update, context, channel):
                 if not user:
                     continue
                 
-                # Lấy ngôn ngữ dịch của người dùng
+                # Lấy ngôn ngữ dịch và giao tiếp của người dùng
                 target_language = user.get("language_code", DEFAULT_LANGUAGE)
+                interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
                 
                 # Chuẩn bị nội dung để hiển thị
                 content_to_display = ""
@@ -477,4 +805,235 @@ async def handle_channel_photo(update, context, channel):
                     logging.error(f"Lỗi khi gửi tin nhắn đến người dùng {user_id}: {e}")
     except Exception as e:
         logging.error(f"Lỗi khi xử lý hình ảnh từ kênh: {e}")
-        return 
+        return
+
+async def handle_channel_video(update, context, channel):
+    """Xử lý tin nhắn video từ kênh"""
+    channel_id = str(update.channel_post.chat.id)
+    
+    # Lấy danh sách người dùng đã đăng ký kênh
+    subscribers = channel.get("subscribers", [])
+    
+    # Lấy caption của video
+    caption = update.channel_post.caption
+    
+    # Nếu không có caption, bỏ qua
+    if not caption:
+        return
+    
+    # Dịch tin nhắn cho từng người dùng
+    for user_id in subscribers:
+        # Lấy thông tin người dùng
+        user = db.get_user(user_id)
+        
+        if not user:
+            continue
+        
+        # Lấy ngôn ngữ dịch và giao tiếp của người dùng
+        target_language = user.get("language_code", DEFAULT_LANGUAGE)
+        interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+        
+        # Dịch caption
+        translation = translate_text(caption, dest_language=target_language)
+        
+        # Nếu có lỗi khi dịch hoặc ngôn ngữ nguồn giống ngôn ngữ đích, bỏ qua
+        if "error" in translation or translation["source_language"] == target_language:
+            continue
+        
+        # Gửi kết quả dịch cho người dùng
+        try:
+            # Gửi video gốc
+            sent_video = await context.bot.send_video(
+                chat_id=user_id,
+                video=update.channel_post.video.file_id,
+                caption=f"📝 *Video từ {channel.get('title', channel_id)}*",
+                parse_mode="Markdown"
+            )
+            
+            # Gửi caption và bản dịch
+            if interface_language == "en":
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📝 *Original Caption:*\n\n{caption}\n\n"
+                    f"🔄 *Translation ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+                    parse_mode="Markdown",
+                    reply_to_message_id=sent_video.message_id
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📝 *Caption gốc:*\n\n{caption}\n\n"
+                    f"🔄 *Bản dịch ({translation['source_language']} → {target_language}):*\n\n{translation['translated_text']}",
+                    parse_mode="Markdown",
+                    reply_to_message_id=sent_video.message_id
+                )
+        except Exception as e:
+            logging.error(f"Lỗi khi gửi tin nhắn đến người dùng {user_id}: {e}")
+
+async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý nhập lệnh đăng ký kênh"""
+    # Lấy thông tin người dùng
+    user_id = update.effective_user.id
+    user = db.get_user(user_id)
+    
+    if not user:
+        # Nếu người dùng chưa tồn tại, tạo mới
+        user_lang = update.effective_user.language_code
+        interface_lang = user_lang if user_lang in BOT_INTERFACE_LANGUAGES else DEFAULT_INTERFACE_LANGUAGE
+        
+        user = db.create_user(
+            user_id=user_id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            language_code=DEFAULT_LANGUAGE,
+            interface_language=interface_lang
+        )
+    
+    # Lấy ngôn ngữ dịch và giao tiếp của người dùng
+    target_language = user.get("language_code", DEFAULT_LANGUAGE)
+    interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+    
+    # Kiểm tra nếu người dùng nhập lệnh khác
+    if channel_id.startswith('/'):
+        # Nếu là lệnh, thoát khỏi chế độ đăng ký
+        if interface_language == "en":
+            await update.message.reply_text(
+                "Registration canceled. Processing your command..."
+            )
+        else:
+            await update.message.reply_text(
+                "Đã hủy đăng ký. Đang xử lý lệnh của bạn..."
+            )
+        
+        # Xóa trạng thái đăng ký kênh
+        context.user_data.pop('register_command', None)
+        return ConversationHandler.END
+
+    # Kiểm tra xem kênh đã được đăng ký chưa
+    channel = db.get_channel(channel_id)
+    is_registered = channel and user_id in channel.get("subscribers", [])
+    
+    # Kiểm tra loại tin nhắn
+    if update.message.photo:
+        # Xử lý tin nhắn hình ảnh được forward
+        await handle_forwarded_photo(update, context, target_language, channel_id, channel.get('title', channel_id), is_registered)
+        return
+    elif update.message.video:
+        # Xử lý tin nhắn video được forward
+        await handle_forwarded_video(update, context, target_language, interface_language, channel_id, channel.get('title', channel_id), is_registered)
+        return
+    
+    # Lấy nội dung tin nhắn
+    text = update.message.text
+    
+    if not text:
+        if interface_language == "en":
+            await update.message.reply_text(
+                "I can only translate text messages, images, or videos with captions. Please forward a text message, image, or video with caption from another channel/bot."
+            )
+        else:
+            await update.message.reply_text(
+                "Tôi chỉ có thể dịch tin nhắn văn bản, hình ảnh, hoặc video có caption. Vui lòng forward tin nhắn văn bản, hình ảnh, hoặc video có caption từ kênh/bot khác."
+            )
+        return
+    
+    # Dịch tin nhắn
+    translation = translate_text(text, dest_language=target_language)
+    
+    # Nếu có lỗi khi dịch
+    if "error" in translation:
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"❌ An error occurred while translating the message: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Có lỗi xảy ra khi dịch tin nhắn: {translation['error']}",
+                reply_to_message_id=update.message.message_id
+            )
+        return
+    
+    # Nếu ngôn ngữ nguồn giống ngôn ngữ đích
+    if translation["source_language"] == target_language:
+        if not is_registered:
+            # Hiển thị nút đăng ký nếu kênh chưa được đăng ký
+            keyboard = [[
+                InlineKeyboardButton("📌 Đăng ký kênh này", callback_data=f"register_{channel_id}")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The message is already in the target language ({get_language_name(target_language)}).\n\n"
+                    f"Do you want to register the channel {channel.get('title', channel_id)} to automatically translate new messages?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Tin nhắn đã ở ngôn ngữ đích ({get_language_name(target_language)}).\n\n"
+                    f"Bạn có muốn đăng ký kênh {channel.get('title', channel_id)} để tự động dịch tin nhắn mới?",
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+        else:
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"The message is already in the target language ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(
+                    f"Tin nhắn đã ở ngôn ngữ đích ({get_language_name(target_language)}).",
+                    reply_to_message_id=update.message.message_id
+                )
+        return
+    
+    # Gửi kết quả dịch
+    if not is_registered:
+        # Hiển thị nút đăng ký nếu kênh chưa được đăng ký
+        keyboard = [[
+            InlineKeyboardButton("📌 Đăng ký kênh này", callback_data=f"register_{channel_id}")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"🔄 *Translation from {channel.get('title', channel_id)}:*\n\n"
+                f"From {get_language_name(translation['source_language'])} to {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"🔄 *Bản dịch từ {channel.get('title', channel_id)}:*\n\n"
+                f"Từ {get_language_name(translation['source_language'])} sang {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+                reply_to_message_id=update.message.message_id
+            )
+    else:
+        if interface_language == "en":
+            await update.message.reply_text(
+                f"🔄 *Translation from {channel.get('title', channel_id)}:*\n\n"
+                f"From {get_language_name(translation['source_language'])} to {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text(
+                f"🔄 *Bản dịch từ {channel.get('title', channel_id)}:*\n\n"
+                f"Từ {get_language_name(translation['source_language'])} sang {get_language_name(target_language)}:\n\n"
+                f"{translation['translated_text']}",
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id
+            )
+
+    # Xóa trạng thái đăng ký kênh
+    context.user_data.pop('register_command', None)
+    return ConversationHandler.END 

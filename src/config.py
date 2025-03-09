@@ -1,5 +1,9 @@
 import os
 from dotenv import load_dotenv
+import logging
+
+# Thiết lập logger
+logger = logging.getLogger(__name__)
 
 # Tải biến môi trường từ file .env
 load_dotenv()
@@ -10,7 +14,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # MongoDB URI
 MONGODB_URI = os.getenv("MONGODB_URI")
 
-# Danh sách ngôn ngữ hỗ trợ
+# Danh sách ngôn ngữ hỗ trợ cho dịch thuật
 SUPPORTED_LANGUAGES = {
     'vi': 'Tiếng Việt',
     'en': 'Tiếng Anh',
@@ -27,5 +31,14 @@ SUPPORTED_LANGUAGES = {
     'ms': 'Tiếng Malaysia',
 }
 
-# Ngôn ngữ mặc định
-DEFAULT_LANGUAGE = 'vi' 
+# Danh sách ngôn ngữ giao tiếp của bot
+BOT_INTERFACE_LANGUAGES = {
+    'vi': 'Tiếng Việt',
+    'en': 'English',
+}
+
+# Ngôn ngữ mặc định cho dịch thuật
+DEFAULT_LANGUAGE = 'vi'
+
+# Ngôn ngữ giao tiếp mặc định của bot
+DEFAULT_INTERFACE_LANGUAGE = 'vi' 
