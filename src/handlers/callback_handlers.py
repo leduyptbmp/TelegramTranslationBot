@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 import logging
 
 from src.database import db
@@ -23,6 +23,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif callback_data.startswith("register_"):
         # Xử lý callback đăng ký kênh
         await handle_register_callback(query, user_id, callback_data)
+    elif callback_data == "cancel_register":
+        # Xử lý callback hủy đăng ký kênh
+        await handle_cancel_register_callback(query, context)
     else:
         # Callback không xác định
         await query.answer("Không thể xử lý yêu cầu này.")
@@ -97,14 +100,45 @@ async def handle_register_callback(query, user_id, callback_data):
     # Lấy ID kênh từ callback data
     channel_id = callback_data.replace("register_", "")
     
-    # Đăng ký kênh cho người dùng
-    db.register_channel(user_id, channel_id)
+    try:
+        # Kiểm tra kênh có tồn tại không
+        chat = await query.bot.get_chat(channel_id)
+        
+        # Đăng ký kênh cho người dùng
+        db.register_channel(user_id, str(chat.id), channel_title=chat.title or channel_id)
+        
+        # Thông báo cho người dùng
+        await query.answer("Đã đăng ký kênh thành công.")
+        
+        # Cập nhật tin nhắn
+        await query.edit_message_text(
+            f"✅ Đã đăng ký kênh {chat.title or channel_id} thành công!\n\n"
+            f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
+        )
+    except Exception as e:
+        logging.error(f"Lỗi khi đăng ký kênh: {e}")
+        await query.answer("Không thể đăng ký kênh.")
+        
+        # Cập nhật tin nhắn
+        await query.edit_message_text(
+            f"❌ Không thể đăng ký kênh. Lỗi: {str(e)}\n\n"
+            f"Nguyên nhân có thể là:\n"
+            f"- Kênh không tồn tại\n"
+            f"- Bot không có quyền truy cập kênh\n"
+            f"- ID kênh không đúng định dạng\n\n"
+            f"Vui lòng kiểm tra lại và thử lại."
+        )
+
+async def handle_cancel_register_callback(query, context):
+    """Xử lý callback hủy đăng ký kênh"""
+    # Xóa trạng thái đăng ký kênh
+    if 'register_command' in context.user_data:
+        context.user_data.pop('register_command')
     
     # Thông báo cho người dùng
-    await query.answer("Đã đăng ký kênh thành công.")
+    await query.answer("Đã hủy thao tác đăng ký kênh.")
     
     # Cập nhật tin nhắn
-    await query.edit_message_text(
-        f"✅ Đã đăng ký kênh {channel_id} thành công!\n\n"
-        f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
-    ) 
+    await query.edit_message_text("❌ Đã hủy thao tác đăng ký kênh.")
+    
+    return ConversationHandler.END 

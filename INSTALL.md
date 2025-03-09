@@ -6,6 +6,7 @@
 - pip (trình quản lý gói của Python)
 - MongoDB (cơ sở dữ liệu)
 - Token bot Telegram (lấy từ BotFather)
+- Tesseract OCR (để trích xuất văn bản từ hình ảnh)
 
 ## Cài đặt tự động
 
@@ -16,15 +17,25 @@
    ```
    cd đường_dẫn_đến_thư_mục_dự_án
    ```
-3. Cấp quyền thực thi cho script cài đặt:
+3. Tạo và kích hoạt môi trường ảo:
+   ```
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+4. Cấp quyền thực thi cho script cài đặt:
    ```
    chmod +x install.sh
    ```
-4. Chạy script cài đặt:
+5. Chạy script cài đặt:
    ```
    ./install.sh
    ```
-5. Cập nhật thông tin trong file `.env`:
+6. Cài đặt Tesseract OCR:
+   ```
+   sudo apt-get update
+   sudo apt-get install tesseract-ocr tesseract-ocr-vie
+   ```
+7. Cập nhật thông tin trong file `.env`:
    ```
    nano .env
    ```
@@ -37,11 +48,20 @@
    ```
    cd đường_dẫn_đến_thư_mục_dự_án
    ```
-3. Chạy script cài đặt:
+3. Tạo và kích hoạt môi trường ảo:
+   ```
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+4. Chạy script cài đặt:
    ```
    install.bat
    ```
-4. Mở file `.env` bằng Notepad hoặc trình soạn thảo văn bản khác và cập nhật thông tin:
+5. Cài đặt Tesseract OCR:
+   - Tải Tesseract OCR từ https://github.com/UB-Mannheim/tesseract/wiki
+   - Cài đặt và thêm đường dẫn vào biến môi trường PATH
+   - Tải thêm dữ liệu ngôn ngữ tiếng Việt nếu cần
+6. Mở file `.env` bằng Notepad hoặc trình soạn thảo văn bản khác và cập nhật thông tin:
    - Thay đổi `TELEGRAM_BOT_TOKEN` thành token bot Telegram của bạn
    - Thay đổi `MONGODB_URI` thành URI kết nối MongoDB của bạn
 
@@ -67,7 +87,26 @@
 
 - **Windows**: Tải và cài đặt MongoDB từ [mongodb.com](https://www.mongodb.com/try/download/community)
 
-### 3. Tạo môi trường ảo
+### 3. Cài đặt Tesseract OCR
+
+- **Linux/macOS**:
+  ```
+  sudo apt-get install tesseract-ocr
+  sudo apt-get install tesseract-ocr-vie  # Hỗ trợ tiếng Việt
+  ```
+
+- **Windows**:
+  - Tải Tesseract OCR từ https://github.com/UB-Mannheim/tesseract/wiki
+  - Cài đặt và thêm đường dẫn vào biến môi trường PATH
+  - Tải thêm dữ liệu ngôn ngữ tiếng Việt nếu cần
+
+- **macOS**:
+  ```
+  brew install tesseract
+  brew install tesseract-lang  # Hỗ trợ nhiều ngôn ngữ
+  ```
+
+### 4. Tạo môi trường ảo
 
 - **Linux/macOS**:
   ```
@@ -81,13 +120,13 @@
   venv\Scripts\activate
   ```
 
-### 4. Cài đặt các thư viện cần thiết
+### 5. Cài đặt các thư viện cần thiết
 
 ```
 pip install -r requirements.txt
 ```
 
-### 5. Cấu hình bot
+### 6. Cấu hình bot
 
 Tạo file `.env` từ file `.env.example` và cập nhật thông tin:
 
@@ -158,8 +197,15 @@ MONGODB_URI=mongodb://localhost:27017/translation_bot
 
 - Cập nhật pip: `pip install --upgrade pip`
 - Cài đặt các gói phụ thuộc hệ thống (nếu cần)
-- Thử cài đặt từng thư viện một 
+- Thử cài đặt từng thư viện một
 
-./run.sh  # Trên Linux/macOS 
+### Lỗi "No module named 'PIL'"
 
-run.bat  # Trên Windows 
+- Đảm bảo bạn đã kích hoạt môi trường ảo: `source venv/bin/activate` (Linux/macOS) hoặc `venv\Scripts\activate` (Windows)
+- Cài đặt lại thư viện Pillow: `pip install Pillow==10.1.0`
+
+### Lỗi khi sử dụng OCR
+
+- Đảm bảo Tesseract OCR đã được cài đặt
+- Kiểm tra đường dẫn đến Tesseract OCR
+- Cài đặt dữ liệu ngôn ngữ cần thiết

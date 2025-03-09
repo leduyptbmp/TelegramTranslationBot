@@ -53,6 +53,20 @@ if %ERRORLEVEL% neq 0 (
 )
 echo Da cai dat cac thu vien can thiet.
 
+REM Kiem tra Tesseract OCR
+echo Kiem tra cai dat Tesseract OCR...
+where tesseract >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo Tesseract OCR chua duoc cai dat hoac khong co trong PATH.
+    echo Ban can cai dat Tesseract OCR de su dung tinh nang OCR.
+    echo Tai Tesseract OCR tu: https://github.com/UB-Mannheim/tesseract/wiki
+    echo Sau khi cai dat, them duong dan vao bien moi truong PATH.
+    echo Tinh nang OCR se khong hoat dong cho den khi ban cai dat Tesseract OCR.
+) else (
+    tesseract --version
+    echo Da tim thay Tesseract OCR.
+)
+
 REM Kiem tra file .env
 echo Kiem tra file .env...
 if not exist .env (

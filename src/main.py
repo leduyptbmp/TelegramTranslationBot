@@ -47,11 +47,17 @@ def main():
     # Đăng ký callback handler cho các nút inline
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # Đăng ký message handler cho tin nhắn thông thường
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Đăng ký message handler cho tin nhắn thông thường và hình ảnh
+    application.add_handler(MessageHandler(
+        (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, 
+        handle_message
+    ))
     
     # Đăng ký channel post handler cho tin nhắn từ kênh
-    application.add_handler(MessageHandler(filters.ChatType.CHANNEL, handle_channel_post))
+    application.add_handler(MessageHandler(
+        filters.ChatType.CHANNEL & (filters.TEXT | filters.PHOTO), 
+        handle_channel_post
+    ))
     
     # Khởi động bot
     logger.info("Bot đã khởi động")

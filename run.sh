@@ -18,7 +18,32 @@ if [ -d "venv" ]; then
         echo -e "${GREEN}Đã kích hoạt môi trường ảo.${NC}"
     fi
 else
-    echo -e "${YELLOW}Không tìm thấy môi trường ảo. Sử dụng Python hệ thống.${NC}"
+    echo -e "${YELLOW}Không tìm thấy môi trường ảo. Tạo môi trường ảo mới...${NC}"
+    python3 -m venv venv
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Không thể tạo môi trường ảo. Tiếp tục với Python hệ thống.${NC}"
+    else
+        echo -e "${GREEN}Đã tạo môi trường ảo.${NC}"
+        source venv/bin/activate
+        echo -e "${YELLOW}Cài đặt các thư viện cần thiết...${NC}"
+        pip install -r requirements.txt
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Không thể cài đặt các thư viện cần thiết.${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Đã cài đặt các thư viện cần thiết.${NC}"
+    fi
+fi
+
+# Kiểm tra Tesseract OCR
+if ! command -v tesseract &>/dev/null; then
+    echo -e "${YELLOW}Cảnh báo: Tesseract OCR chưa được cài đặt.${NC}"
+    echo -e "${YELLOW}Tính năng OCR sẽ không hoạt động.${NC}"
+    echo -e "${YELLOW}Bạn có thể cài đặt Tesseract OCR bằng lệnh:${NC}"
+    echo -e "${YELLOW}Ubuntu/Debian: sudo apt-get install tesseract-ocr tesseract-ocr-vie${NC}"
+    echo -e "${YELLOW}macOS: brew install tesseract tesseract-lang${NC}"
+    echo -e "${YELLOW}Nhấn Enter để tiếp tục...${NC}"
+    read
 fi
 
 # Kiểm tra file .env

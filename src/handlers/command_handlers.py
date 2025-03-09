@@ -1,6 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 import logging
+import re
 
 from src.database import db
 from src.config import SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
@@ -52,10 +53,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1️⃣ Cài đặt ngôn ngữ dịch bằng lệnh /setlang\n"
         "2️⃣ Đăng ký kênh/bot bằng cách forward tin nhắn từ kênh đó hoặc sử dụng lệnh /register\n"
         "3️⃣ Bot sẽ tự động dịch tin nhắn mới từ các kênh đã đăng ký\n"
-        "4️⃣ Bạn cũng có thể forward bất kỳ tin nhắn nào để dịch\n\n"
+        "4️⃣ Bạn cũng có thể forward bất kỳ tin nhắn nào để dịch\n"
+        "5️⃣ Gửi hình ảnh có chứa văn bản để bot trích xuất và dịch\n\n"
         
         "*Lưu ý:*\n"
         "- Bot cần được thêm vào kênh/nhóm để nhận tin nhắn mới\n"
+        "- Để sử dụng tính năng OCR, hãy gửi hình ảnh rõ nét và có văn bản dễ đọc\n"
         "- Nếu bạn gặp vấn đề, hãy thử khởi động lại bot với lệnh /start"
     )
     
@@ -89,12 +92,17 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Lưu trữ thông tin người dùng vào user_data
         context.user_data['register_command'] = True
         
+        # Tạo nút hủy bỏ
+        keyboard = [[InlineKeyboardButton("❌ Hủy bỏ", callback_data="cancel_register")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         # Yêu cầu người dùng nhập ID kênh
         await update.message.reply_text(
             "Vui lòng nhập ID hoặc username của kênh/bot bạn muốn đăng ký.\n\n"
             "Ví dụ: @channel_name hoặc -1001234567890\n\n"
             "Hoặc bạn có thể forward một tin nhắn từ kênh/bot đó để đăng ký.\n\n"
-            "Gửi /cancel để hủy thao tác."
+            "Bạn cũng có thể gửi /cancel để hủy thao tác.",
+            reply_markup=reply_markup
         )
         
         # Chuyển sang trạng thái chờ người dùng nhập kênh
@@ -103,19 +111,36 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_id = context.args[0]
     user_id = update.effective_user.id
     
+    # Kiểm tra định dạng channel_id
+    if not is_valid_channel_id(channel_id):
+        await update.message.reply_text(
+            "❌ ID kênh không hợp lệ. Vui lòng nhập đúng định dạng:\n"
+            "- @username cho kênh công khai\n"
+            "- -100xxxxxxxxxx cho kênh riêng tư\n\n"
+            "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký."
+        )
+        return
+    
     try:
+        # Kiểm tra kênh có tồn tại không
+        chat = await context.bot.get_chat(channel_id)
+        
         # Đăng ký kênh cho người dùng
-        db.register_channel(user_id, channel_id, channel_title=channel_id)
+        db.register_channel(user_id, str(chat.id), channel_title=chat.title or channel_id)
         
         await update.message.reply_text(
-            f"✅ Đã đăng ký kênh {channel_id} thành công!\n\n"
+            f"✅ Đã đăng ký kênh {chat.title or channel_id} thành công!\n\n"
             f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
         )
     except Exception as e:
         logging.error(f"Lỗi khi đăng ký kênh: {e}")
         await update.message.reply_text(
-            f"❌ Có lỗi xảy ra khi đăng ký kênh: {str(e)}\n\n"
-            f"Vui lòng kiểm tra lại ID kênh và thử lại."
+            f"❌ Không thể đăng ký kênh. Lỗi: {str(e)}\n\n"
+            f"Nguyên nhân có thể là:\n"
+            f"- Kênh không tồn tại\n"
+            f"- Bot không có quyền truy cập kênh\n"
+            f"- ID kênh không đúng định dạng\n\n"
+            f"Vui lòng kiểm tra lại và thử lại."
         )
 
 async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,24 +160,57 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Đã hủy thao tác đăng ký kênh.")
         return ConversationHandler.END
     
+    # Kiểm tra định dạng channel_id
+    if not is_valid_channel_id(channel_id):
+        await update.message.reply_text(
+            "❌ ID kênh không hợp lệ. Vui lòng nhập đúng định dạng:\n"
+            "- @username cho kênh công khai\n"
+            "- -100xxxxxxxxxx cho kênh riêng tư\n\n"
+            "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký."
+        )
+        return ConversationHandler.END
+    
     user_id = update.effective_user.id
     
     try:
+        # Kiểm tra kênh có tồn tại không
+        chat = await context.bot.get_chat(channel_id)
+        
         # Đăng ký kênh cho người dùng
-        db.register_channel(user_id, channel_id, channel_title=channel_id)
+        db.register_channel(user_id, str(chat.id), channel_title=chat.title or channel_id)
         
         await update.message.reply_text(
-            f"✅ Đã đăng ký kênh {channel_id} thành công!\n\n"
+            f"✅ Đã đăng ký kênh {chat.title or channel_id} thành công!\n\n"
             f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
         )
     except Exception as e:
         logging.error(f"Lỗi khi đăng ký kênh: {e}")
         await update.message.reply_text(
-            f"❌ Có lỗi xảy ra khi đăng ký kênh: {str(e)}\n\n"
-            f"Vui lòng kiểm tra lại ID kênh và thử lại."
+            f"❌ Không thể đăng ký kênh. Lỗi: {str(e)}\n\n"
+            f"Nguyên nhân có thể là:\n"
+            f"- Kênh không tồn tại\n"
+            f"- Bot không có quyền truy cập kênh\n"
+            f"- ID kênh không đúng định dạng\n\n"
+            f"Vui lòng kiểm tra lại và thử lại."
         )
     
     return ConversationHandler.END
+
+def is_valid_channel_id(channel_id):
+    """Kiểm tra xem channel_id có đúng định dạng không"""
+    # Kiểm tra định dạng @username
+    if channel_id.startswith('@') and len(channel_id) > 1:
+        return True
+    
+    # Kiểm tra định dạng -100xxxxxxxxxx (ID kênh riêng tư)
+    if re.match(r'^-100\d+$', channel_id):
+        return True
+    
+    # Kiểm tra định dạng số nguyên (ID kênh)
+    if re.match(r'^-?\d+$', channel_id):
+        return True
+    
+    return False
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Hủy thao tác hiện tại"""
