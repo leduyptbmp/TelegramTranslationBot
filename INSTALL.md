@@ -65,6 +65,54 @@
    - Thay đổi `TELEGRAM_BOT_TOKEN` thành token bot Telegram của bạn
    - Thay đổi `MONGODB_URI` thành URI kết nối MongoDB của bạn
 
+## Cài đặt như một Service
+
+Bot có thể được cài đặt như một service để chạy tự động khi khởi động hệ thống và tự động khởi động lại khi gặp lỗi.
+
+### Trên Linux (systemd)
+
+1. Cấp quyền thực thi cho script cài đặt service:
+   ```
+   chmod +x install_service.sh
+   ```
+
+2. Chạy script cài đặt service với quyền root:
+   ```
+   sudo ./install_service.sh
+   ```
+
+3. Quản lý service:
+   ```
+   sudo systemctl start telegram-translation-bot    # Khởi động service
+   sudo systemctl stop telegram-translation-bot     # Dừng service
+   sudo systemctl restart telegram-translation-bot  # Khởi động lại service
+   sudo systemctl status telegram-translation-bot   # Xem trạng thái service
+   sudo journalctl -u telegram-translation-bot -f   # Xem log của service
+   ```
+
+### Trên Windows (NSSM)
+
+1. Chạy Command Prompt hoặc PowerShell với quyền Administrator
+2. Di chuyển đến thư mục dự án:
+   ```
+   cd đường_dẫn_đến_thư_mục_dự_án
+   ```
+3. Chạy script cài đặt service:
+   ```
+   install_service.bat
+   ```
+   Script sẽ tự động tải và cài đặt NSSM (Non-Sucking Service Manager) nếu chưa được cài đặt.
+
+4. Quản lý service:
+   ```
+   nssm start TelegramTranslationBot    # Khởi động service
+   nssm stop TelegramTranslationBot     # Dừng service
+   nssm restart TelegramTranslationBot  # Khởi động lại service
+   nssm status TelegramTranslationBot   # Xem trạng thái service
+   nssm edit TelegramTranslationBot     # Chỉnh sửa cấu hình service
+   nssm remove TelegramTranslationBot   # Xóa service
+   ```
+
 ## Cài đặt thủ công
 
 ### 1. Cài đặt Python và pip

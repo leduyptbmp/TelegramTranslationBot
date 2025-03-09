@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegram Translation Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=USER_NAME
+WorkingDirectory=/path/to/TelegramTranslationBot
+ExecStart=/path/to/TelegramTranslationBot/venv/bin/python /path/to/TelegramTranslationBot/run.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-translation-bot
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target 
