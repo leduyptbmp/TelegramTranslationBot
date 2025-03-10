@@ -629,16 +629,24 @@ async def handle_forwarded_photo(update, context, target_language, source_id, so
         )
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xử lý tin nhắn từ kênh"""
+    """Xử lý tin nhắn mới từ kênh"""
     try:
         # Lấy thông tin kênh
         channel_id = str(update.channel_post.chat.id)
+        channel_title = update.channel_post.chat.title
+        
+        logging.info(f"Received new message from channel {channel_title} ({channel_id})")
+        logging.info(f"Message type: {update.channel_post.type}")
+        logging.info(f"Message ID: {update.channel_post.message_id}")
         
         # Lấy danh sách người dùng đã đăng ký kênh này
         registered_users = db.get_channel_users(channel_id)
         
         if not registered_users:
+            logging.info(f"No registered users for channel {channel_title} ({channel_id})")
             return
+        
+        logging.info(f"Found {len(registered_users)} registered users for channel {channel_title} ({channel_id})")
         
         # Lấy nội dung tin nhắn
         message = update.channel_post
@@ -646,41 +654,64 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Xử lý tin nhắn văn bản
         if message.text:
             text = message.text
+            logging.info(f"Processing text message from channel {channel_title} ({channel_id})")
         # Xử lý tin nhắn hình ảnh có caption
         elif message.caption:
             text = message.caption
+            logging.info(f"Processing image caption from channel {channel_title} ({channel_id})")
         else:
+            logging.info(f"No text content to translate from channel {channel_title} ({channel_id})")
             return
         
-        # Dịch nội dung cho từng người dùng đã đăng ký
+        # Nhóm người dùng theo ngôn ngữ đích
+        users_by_language = {}
         for user in registered_users:
+            target_language = user.get("language_code", DEFAULT_LANGUAGE)
+            if target_language not in users_by_language:
+                users_by_language[target_language] = []
+            users_by_language[target_language].append(user)
+        
+        logging.info(f"Grouped users by target language: {list(users_by_language.keys())}")
+        
+        # Dịch và gửi tin nhắn cho từng nhóm ngôn ngữ
+        for target_language, users in users_by_language.items():
             try:
-                user_id = user.get("user_id")
-                target_language = user.get("language_code", DEFAULT_LANGUAGE)
-                interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+                # Dịch nội dung một lần cho mỗi ngôn ngữ đích
+                translation = translate_text(text, dest_language=target_language)
+                logging.info(f"Translated text to {target_language}")
                 
-                # Dịch nội dung
-                translated_text = await translate_text(text, target_language)
-                
-                # Tạo tin nhắn phản hồi
-                if interface_language == "en":
-                    response = f"📢 *New message from {message.chat.title}*\n\n"
-                    response += f"*Original:*\n{text}\n\n"
-                    response += f"*Translation:*\n{translated_text}"
-                else:
-                    response = f"📢 *Tin nhắn mới từ {message.chat.title}*\n\n"
-                    response += f"*Nội dung gốc:*\n{text}\n\n"
-                    response += f"*Bản dịch:*\n{translated_text}"
-                
-                # Gửi tin nhắn đã dịch
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=response,
-                    parse_mode="Markdown"
-                )
-                
+                # Gửi tin nhắn cho tất cả người dùng trong nhóm ngôn ngữ
+                for user in users:
+                    try:
+                        user_id = user.get("user_id")
+                        interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+                        
+                        logging.info(f"Sending message to user {user_id} in {interface_language}")
+                        
+                        # Tạo tin nhắn phản hồi
+                        if interface_language == "en":
+                            response = f"📢 *New message from {channel_title}*\n\n"
+                            response += f"*Original:*\n{text}\n\n"
+                            response += f"*Translation:*\n{translation['translated_text']}"
+                        else:
+                            response = f"📢 *Tin nhắn mới từ {channel_title}*\n\n"
+                            response += f"*Nội dung gốc:*\n{text}\n\n"
+                            response += f"*Bản dịch:*\n{translation['translated_text']}"
+                        
+                        # Gửi tin nhắn đã dịch trực tiếp cho người dùng trong chat riêng
+                        await context.bot.send_message(
+                            chat_id=user_id,  # Gửi đến user_id thay vì channel_id
+                            text=response,
+                            parse_mode="Markdown"
+                        )
+                        logging.info(f"Successfully sent translated message to user {user_id}")
+                        
+                    except Exception as e:
+                        logging.error(f"Error sending message to user {user_id}: {e}")
+                        continue
+                        
             except Exception as e:
-                logging.error(f"Error processing message for user {user_id}: {e}")
+                logging.error(f"Error processing translation for language {target_language}: {e}")
                 continue
                 
     except Exception as e:

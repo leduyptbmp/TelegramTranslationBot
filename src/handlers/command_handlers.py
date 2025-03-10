@@ -223,17 +223,21 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Yêu cầu người dùng nhập ID kênh
         if interface_language == "en":
             await update.message.reply_text(
-                "Please enter the channel ID or username you want to register.\n\n"
-                "Example: @channel_name or -1001234567890\n\n"
-                "Or you can forward a message from that channel to register.\n\n"
+                "Please enter the channel share link or username you want to register.\n\n"
+                "You can register a channel in 3 ways:\n"
+                "1. Forward a message from the channel\n"
+                "2. Enter the channel username (e.g., @channel_name)\n"
+                "3. Enter the channel share link (e.g., https://t.me/channel_name)\n\n"
                 "You can also send /cancel to cancel the operation.",
                 reply_markup=reply_markup
             )
         else:
             await update.message.reply_text(
-                "Vui lòng nhập ID hoặc username của kênh bạn muốn đăng ký.\n\n"
-                "Ví dụ: @channel_name hoặc -1001234567890\n\n"
-                "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký.\n\n"
+                "Vui lòng nhập link chia sẻ hoặc username của kênh bạn muốn đăng ký.\n\n"
+                "Bạn có thể đăng ký kênh bằng 3 cách:\n"
+                "1. Forward một tin nhắn từ kênh\n"
+                "2. Nhập username của kênh (ví dụ: @channel_name)\n"
+                "3. Nhập link chia sẻ kênh (ví dụ: https://t.me/channel_name)\n\n"
                 "Bạn cũng có thể gửi /cancel để hủy thao tác.",
                 reply_markup=reply_markup
             )
@@ -254,11 +258,14 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         channel_id = str(chat.id)
         channel_title = chat.title if hasattr(chat, 'title') else chat.username
         
+        logging.info(f"Processing forwarded message from channel {channel_title} ({channel_id})")
+        
         try:
             # Kiểm tra xem kênh đã được đăng ký chưa
             user_channels = db.get_user_channels(user_id)
             for existing_channel in user_channels:
                 if str(existing_channel.get("channel_id")) == channel_id:
+                    logging.info(f"Channel {channel_title} ({channel_id}) is already registered for user {user_id}")
                     if interface_language == "en":
                         await update.message.reply_text(
                             f"⚠️ You have already registered the channel {channel_title}.\n\n"
@@ -277,6 +284,7 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
                 channel_id=channel_id,
                 channel_title=channel_title
             )
+            logging.info(f"Registered channel {channel_title} ({channel_id}) for user {user_id}")
             
             if interface_language == "en":
                 await update.message.reply_text(
@@ -290,7 +298,7 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
                 )
             
         except Exception as e:
-            logging.error(f"Error registering channel: {e}")
+            logging.error(f"Error registering channel {channel_title} ({channel_id}): {e}")
             if interface_language == "en":
                 await update.message.reply_text(
                     f"❌ Cannot register the channel. Error: {str(e)}\n\n"
@@ -430,6 +438,13 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
                     )
                 return WAITING_FOR_CHANNEL
         
+        # Kiểm tra quyền truy cập kênh
+        try:
+            await context.bot.get_chat_member(chat.id, context.bot.id)
+            is_private = False
+        except Exception:
+            is_private = False
+        
         # Lấy thông tin kênh
         channel_title = chat.title if hasattr(chat, 'title') else chat.username
         channel_username = chat.username if hasattr(chat, 'username') else None
@@ -444,12 +459,14 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
         if interface_language == "en":
             await update.message.reply_text(
                 f"✅ Successfully registered channel {chat.title or channel_id}!\n\n"
-                f"The bot will automatically translate new messages from this channel."
+                f"The bot will automatically translate new messages from this channel.\n\n"
+                f"Note: {'The bot needs to be a member of this private channel to receive messages.' if is_private else 'This is a public channel, the bot can receive messages without being a member.'}"
             )
         else:
             await update.message.reply_text(
                 f"✅ Đã đăng ký kênh {chat.title or channel_id} thành công!\n\n"
-                f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
+                f"Bot sẽ tự động dịch tin nhắn mới từ kênh này.\n\n"
+                f"Lưu ý: {'Bot cần phải là thành viên của kênh riêng tư này để nhận tin nhắn.' if is_private else 'Đây là kênh công khai, bot có thể nhận tin nhắn mà không cần là thành viên.'}"
             )
         
         # Xóa trạng thái đăng ký kênh
@@ -711,4 +728,76 @@ async def handle_cancel_register(update: Update, context: ContextTypes.DEFAULT_T
     else:
         await query.message.reply_text("Đã hủy thao tác đăng ký kênh.")
     
-    return ConversationHandler.END 
+    return ConversationHandler.END
+
+async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý tin nhắn mới từ kênh"""
+    try:
+        # Lấy thông tin kênh
+        channel_id = str(update.channel_post.chat.id)
+        
+        # Lấy danh sách người dùng đã đăng ký kênh này
+        registered_users = db.get_channel_users(channel_id)
+        
+        if not registered_users:
+            return
+        
+        # Lấy nội dung tin nhắn
+        message = update.channel_post
+        
+        # Xử lý tin nhắn văn bản
+        if message.text:
+            text = message.text
+        # Xử lý tin nhắn hình ảnh có caption
+        elif message.caption:
+            text = message.caption
+        else:
+            return
+        
+        # Nhóm người dùng theo ngôn ngữ đích
+        users_by_language = {}
+        for user in registered_users:
+            target_language = user.get("language_code", DEFAULT_LANGUAGE)
+            if target_language not in users_by_language:
+                users_by_language[target_language] = []
+            users_by_language[target_language].append(user)
+        
+        # Dịch và gửi tin nhắn cho từng nhóm ngôn ngữ
+        for target_language, users in users_by_language.items():
+            try:
+                # Dịch nội dung một lần cho mỗi ngôn ngữ đích
+                translated_text = await translate_text(text, target_language)
+                
+                # Gửi tin nhắn cho tất cả người dùng trong nhóm ngôn ngữ
+                for user in users:
+                    try:
+                        user_id = user.get("user_id")
+                        interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+                        
+                        # Tạo tin nhắn phản hồi
+                        if interface_language == "en":
+                            response = f"📢 *New message from {message.chat.title}*\n\n"
+                            response += f"*Original:*\n{text}\n\n"
+                            response += f"*Translation:*\n{translated_text}"
+                        else:
+                            response = f"📢 *Tin nhắn mới từ {message.chat.title}*\n\n"
+                            response += f"*Nội dung gốc:*\n{text}\n\n"
+                            response += f"*Bản dịch:*\n{translated_text}"
+                        
+                        # Gửi tin nhắn đã dịch trực tiếp cho người dùng trong chat riêng
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=response,
+                            parse_mode="Markdown"
+                        )
+                        
+                    except Exception as e:
+                        logging.error(f"Error sending message to user {user_id}: {e}")
+                        continue
+                        
+            except Exception as e:
+                logging.error(f"Error processing translation for language {target_language}: {e}")
+                continue
+                
+    except Exception as e:
+        logging.error(f"Error handling channel post: {e}") 

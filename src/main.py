@@ -1,5 +1,6 @@
 import logging
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ConversationHandler
+import os
 
 from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers.command_handlers import (
@@ -11,10 +12,18 @@ from src.handlers.command_handlers import (
 from src.handlers.callback_handlers import button_callback
 from src.handlers.message_handlers import handle_message, handle_channel_post
 
+# Tạo thư mục logs nếu chưa tồn tại
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
 # Cấu hình logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,  # Thay đổi level từ DEBUG sang INFO
+    handlers=[
+        logging.FileHandler('logs/bot.log'),  # Lưu log vào file
+        logging.StreamHandler()  # Hiển thị log trên console
+    ]
 )
 logger = logging.getLogger(__name__)
 
