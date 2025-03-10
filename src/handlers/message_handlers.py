@@ -629,85 +629,62 @@ async def handle_forwarded_photo(update, context, target_language, source_id, so
         )
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xử lý tin nhắn mới từ kênh"""
-    # Lấy thông tin kênh
-    channel_id = str(update.channel_post.chat.id)
-    channel = db.get_channel(channel_id)
-    
-    # Log thông tin kênh
-    logging.info(f"Received message from channel: {channel_id}")
-
-    # Nếu kênh không được đăng ký, bỏ qua và log
-    if not channel:
-        logging.warning(f"Channel {channel_id} is not registered.")
-        return
-
-    # Lấy danh sách người dùng đã đăng ký kênh
-    subscribers = channel.get("subscribers", [])
-    
-    # Nếu không có người dùng nào đăng ký, bỏ qua và log
-    if not subscribers:
-        logging.warning(f"No subscribers for channel {channel_id}.")
-        return
-    
-    # Kiểm tra loại tin nhắn
-    if update.channel_post.photo:
-        logging.info(f"Processing photo message from channel {channel_id}.")
-        await handle_channel_photo(update, context, channel)
-        return
-    elif update.channel_post.video:
-        logging.info(f"Processing video message from channel {channel_id}.")
-        await handle_channel_video(update, context, channel)
-        return
-    
-    # Log nội dung tin nhắn
-    logging.info(f"Processing text message from channel {channel_id}.")
-
-    # Lấy nội dung tin nhắn
-    text = update.channel_post.text
-    
-    if not text:
-        return
-    
-    # Dịch tin nhắn cho từng người dùng
-    for user_id in subscribers:
-        # Lấy thông tin người dùng
-        user = db.get_user(user_id)
+    """Xử lý tin nhắn từ kênh"""
+    try:
+        # Lấy thông tin kênh
+        channel_id = str(update.channel_post.chat.id)
         
-        if not user:
-            logging.warning(f"User {user_id} not found in database.")
-            continue
+        # Lấy danh sách người dùng đã đăng ký kênh này
+        registered_users = db.get_channel_users(channel_id)
         
-        # Lấy ngôn ngữ dịch và giao tiếp của người dùng
-        target_language = user.get("language_code", DEFAULT_LANGUAGE)
-        interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+        if not registered_users:
+            return
         
-        # Log ngôn ngữ dịch
-        logging.info(f"Translating message for user {user_id} to {target_language}.")
-
-        # Dịch tin nhắn
-        translation = translate_text(text, dest_language=target_language)
+        # Lấy nội dung tin nhắn
+        message = update.channel_post
         
-        # Nếu có lỗi khi dịch hoặc ngôn ngữ nguồn giống ngôn ngữ đích, bỏ qua
-        if "error" in translation or translation["source_language"] == target_language:
-            continue
+        # Xử lý tin nhắn văn bản
+        if message.text:
+            text = message.text
+        # Xử lý tin nhắn hình ảnh có caption
+        elif message.caption:
+            text = message.caption
+        else:
+            return
         
-        # Gửi kết quả dịch cho người dùng
-        try:
-            if interface_language == "en":
+        # Dịch nội dung cho từng người dùng đã đăng ký
+        for user in registered_users:
+            try:
+                user_id = user.get("user_id")
+                target_language = user.get("language_code", DEFAULT_LANGUAGE)
+                interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE)
+                
+                # Dịch nội dung
+                translated_text = await translate_text(text, target_language)
+                
+                # Tạo tin nhắn phản hồi
+                if interface_language == "en":
+                    response = f"📢 *New message from {message.chat.title}*\n\n"
+                    response += f"*Original:*\n{text}\n\n"
+                    response += f"*Translation:*\n{translated_text}"
+                else:
+                    response = f"📢 *Tin nhắn mới từ {message.chat.title}*\n\n"
+                    response += f"*Nội dung gốc:*\n{text}\n\n"
+                    response += f"*Bản dịch:*\n{translated_text}"
+                
+                # Gửi tin nhắn đã dịch
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text=f"🔄 *Translation from {channel.get('title', channel_id)}:*{translation['translated_text']}",
+                    text=response,
                     parse_mode="Markdown"
                 )
-            else:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"🔄 *Bản dịch từ {channel.get('title', channel_id)}:*{translation['translated_text']}",
-                    parse_mode="Markdown"
-                )
-        except Exception as e:
-            logging.error(f"Error sending message to user {user_id}: {e}")
+                
+            except Exception as e:
+                logging.error(f"Error processing message for user {user_id}: {e}")
+                continue
+                
+    except Exception as e:
+        logging.error(f"Error handling channel post: {e}")
 
 async def handle_channel_photo(update, context, channel):
     """Xử lý tin nhắn hình ảnh từ kênh"""

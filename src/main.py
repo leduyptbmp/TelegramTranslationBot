@@ -5,7 +5,8 @@ from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers.command_handlers import (
     start_command, help_command, setlang_command, setinterfacelang_command,
     register_command, channels_command, unregister_command,
-    register_channel_input, cancel_command, WAITING_FOR_CHANNEL
+    register_channel_input, cancel_command, WAITING_FOR_CHANNEL,
+    handle_cancel_register
 )
 from src.handlers.callback_handlers import button_callback
 from src.handlers.message_handlers import handle_message, handle_channel_post
@@ -39,7 +40,10 @@ def main():
     register_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register_command)],
         states={
-            WAITING_FOR_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_channel_input)]
+            WAITING_FOR_CHANNEL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, register_channel_input),
+                CallbackQueryHandler(handle_cancel_register, pattern="^cancel_register$")
+            ]
         },
         fallbacks=[CommandHandler("cancel", cancel_command)]
     )

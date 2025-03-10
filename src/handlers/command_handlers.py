@@ -203,6 +203,14 @@ async def setinterfacelang_command(update: Update, context: ContextTypes.DEFAULT
 
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý lệnh /register"""
+    # Xóa tất cả trạng thái đăng ký cũ
+    context.user_data.clear()
+    
+    # Lấy thông tin người dùng
+    user_id = update.effective_user.id
+    user = db.get_user(user_id)
+    interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE) if user else DEFAULT_INTERFACE_LANGUAGE
+    
     # Kiểm tra xem người dùng đã cung cấp ID kênh chưa
     if not context.args:
         # Lưu trữ thông tin người dùng vào user_data
@@ -213,84 +221,106 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         # Yêu cầu người dùng nhập ID kênh
-        await update.message.reply_text(
-            "Vui lòng nhập ID hoặc username của kênh bạn muốn đăng ký.\n\n"
-            "Ví dụ: @channel_name hoặc -1001234567890\n\n"
-            "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký.\n\n"
-            "Bạn cũng có thể gửi /cancel để hủy thao tác.",
-            reply_markup=reply_markup
-        )
+        if interface_language == "en":
+            await update.message.reply_text(
+                "Please enter the channel ID or username you want to register.\n\n"
+                "Example: @channel_name or -1001234567890\n\n"
+                "Or you can forward a message from that channel to register.\n\n"
+                "You can also send /cancel to cancel the operation.",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                "Vui lòng nhập ID hoặc username của kênh bạn muốn đăng ký.\n\n"
+                "Ví dụ: @channel_name hoặc -1001234567890\n\n"
+                "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký.\n\n"
+                "Bạn cũng có thể gửi /cancel để hủy thao tác.",
+                reply_markup=reply_markup
+            )
         
         # Chuyển sang trạng thái chờ người dùng nhập kênh
         return WAITING_FOR_CHANNEL
-    
-    channel_id = context.args[0]
-    user_id = update.effective_user.id
-    
+
+async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý tin nhắn được forward"""
     # Lấy thông tin người dùng
+    user_id = update.effective_user.id
     user = db.get_user(user_id)
     interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE) if user else DEFAULT_INTERFACE_LANGUAGE
     
-    # Kiểm tra định dạng channel_id
-    if not is_valid_channel_id(channel_id):
-        if interface_language == "en":
-            await update.message.reply_text(
-                "Invalid channel ID format. Please provide a valid channel ID or username."
-            )
-        else:
-            await update.message.reply_text(
-                "❌ ID kênh không hợp lệ. Vui lòng nhập đúng định dạng:\n"
-                "- @username cho kênh công khai\n"
-                "- -100xxxxxxxxxx cho kênh riêng tư\n\n"
-                "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký."
-            )
-        return ConversationHandler.END
-    
-    try:
-        # Lấy thông tin kênh từ Telegram
-        chat = await context.bot.get_chat(channel_id)
-        
-        # Lấy thông tin kênh
+    # Lấy thông tin kênh từ tin nhắn được forward
+    if update.message.forward_from_chat:
+        chat = update.message.forward_from_chat
+        channel_id = str(chat.id)
         channel_title = chat.title if hasattr(chat, 'title') else chat.username
-        channel_username = chat.username if hasattr(chat, 'username') else None
         
-        # Đăng ký kênh cho người dùng
-        db.register_channel(
-            user_id=user_id,
-            channel_id=str(chat.id),
-            channel_title=channel_title
-        )
-        
-        # Thông báo thành công
-        if interface_language == "en":
-            await update.message.reply_text(
-                f"Successfully registered channel: {channel_title}"
+        try:
+            # Kiểm tra xem kênh đã được đăng ký chưa
+            user_channels = db.get_user_channels(user_id)
+            for existing_channel in user_channels:
+                if str(existing_channel.get("channel_id")) == channel_id:
+                    if interface_language == "en":
+                        await update.message.reply_text(
+                            f"⚠️ You have already registered the channel {channel_title}.\n\n"
+                            f"You can view your registered channels with the /channels command."
+                        )
+                    else:
+                        await update.message.reply_text(
+                            f"⚠️ Bạn đã đăng ký kênh {channel_title} rồi.\n\n"
+                            f"Bạn có thể xem danh sách kênh đã đăng ký bằng lệnh /channels."
+                        )
+                    return
+            
+            # Đăng ký kênh cho người dùng
+            db.register_channel(
+                user_id=user_id,
+                channel_id=channel_id,
+                channel_title=channel_title
             )
-        else:
-            await update.message.reply_text(
-                f"✅ Đã đăng ký kênh {channel_title} thành công!\n\n"
-                f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
-            )
+            
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"✅ Successfully registered channel {channel_title}!\n\n"
+                    f"The bot will automatically translate new messages from this channel."
+                )
+            else:
+                await update.message.reply_text(
+                    f"✅ Đã đăng ký kênh {channel_title} thành công!\n\n"
+                    f"Bot sẽ tự động dịch tin nhắn mới từ kênh này."
+                )
+            
+        except Exception as e:
+            logging.error(f"Error registering channel: {e}")
+            if interface_language == "en":
+                await update.message.reply_text(
+                    f"❌ Cannot register the channel. Error: {str(e)}\n\n"
+                    f"Possible reasons:\n"
+                    f"- The channel does not exist\n"
+                    f"- The bot does not have access to the channel\n"
+                    f"- The channel ID format is incorrect\n\n"
+                    f"Please check and try again."
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ Không thể đăng ký kênh. Lỗi: {str(e)}\n\n"
+                    f"Nguyên nhân có thể là:\n"
+                    f"- Kênh không tồn tại\n"
+                    f"- Bot không có quyền truy cập kênh\n"
+                    f"- ID kênh không đúng định dạng\n\n"
+                    f"Vui lòng kiểm tra lại và thử lại."
+                )
+
+def is_valid_channel_id(channel_id):
+    """Kiểm tra xem channel_id có đúng định dạng không"""
+    # Kiểm tra định dạng @username
+    if channel_id.startswith('@') and len(channel_id) > 1:
+        return True
     
-    except Exception as e:
-        logging.error(f"Error registering channel: {e}")
-        
-        # Thông báo lỗi
-        if interface_language == "en":
-            await update.message.reply_text(
-                "Failed to register the channel. Please check if the ID/username is correct and the bot has access to the channel."
-            )
-        else:
-            await update.message.reply_text(
-                f"❌ Không thể đăng ký kênh. Lỗi: {str(e)}\n\n"
-                f"Nguyên nhân có thể là:\n"
-                f"- Kênh không tồn tại\n"
-                f"- Bot không có quyền truy cập kênh\n"
-                f"- ID kênh không đúng định dạng\n\n"
-                f"Vui lòng kiểm tra lại và thử lại."
-            )
+    # Kiểm tra định dạng link chia sẻ kênh
+    if channel_id.startswith('https://t.me/') or channel_id.startswith('t.me/'):
+        return True
     
-    return ConversationHandler.END
+    return False
 
 async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý input khi người dùng nhập ID kênh"""
@@ -301,10 +331,25 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
     
     # Kiểm tra xem người dùng có đang trong quá trình đăng ký kênh không
     if not context.user_data.get('register_command'):
+        # Nếu không trong quá trình đăng ký, xóa trạng thái và kết thúc
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    # Kiểm tra nếu tin nhắn được forward
+    if update.message.forward_from_chat or update.message.forward_from:
+        # Xóa trạng thái đăng ký kênh
+        context.user_data.clear()
+        # Xử lý tin nhắn được forward
+        await handle_forwarded_message(update, context)
         return ConversationHandler.END
     
     # Lấy ID kênh từ tin nhắn của người dùng
     channel_id = update.message.text.strip()
+    
+    # Tạo nút hủy thao tác
+    cancel_button = InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ Cancel" if interface_language == "en" else "❌ Hủy", callback_data="cancel_register")
+    ]])
     
     # Kiểm tra nếu người dùng muốn hủy thao tác
     if channel_id.lower() == '/cancel':
@@ -314,7 +359,7 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text("Đã hủy thao tác đăng ký kênh.")
         
         # Xóa trạng thái đăng ký kênh
-        context.user_data.pop('register_command', None)
+        context.user_data.clear()
         return ConversationHandler.END
     
     # Kiểm tra nếu người dùng nhập lệnh khác
@@ -330,30 +375,25 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
             )
         
         # Xóa trạng thái đăng ký kênh
-        context.user_data.pop('register_command', None)
+        context.user_data.clear()
         return ConversationHandler.END
-    
-    # Tạo nút hủy thao tác
-    cancel_button = InlineKeyboardMarkup([[
-        InlineKeyboardButton("❌ Cancel" if interface_language == "en" else "❌ Hủy", callback_data="cancel_register")
-    ]])
     
     # Kiểm tra định dạng channel_id
     if not is_valid_channel_id(channel_id):
         if interface_language == "en":
             await update.message.reply_text(
-                "❌ Invalid channel ID. Please enter in the correct format:\n"
+                "❌ Invalid channel format. Please enter:\n"
                 "- @username for public channels\n"
-                "- -100xxxxxxxxxx for private channels\n\n"
+                "- Channel share link (e.g., https://t.me/channel_name)\n\n"
                 "Or you can forward a message from that channel to register it.\n\n"
                 "Please try again or type /cancel to cancel the operation.",
                 reply_markup=cancel_button
             )
         else:
             await update.message.reply_text(
-                "❌ ID kênh không hợp lệ. Vui lòng nhập đúng định dạng:\n"
+                "❌ Định dạng kênh không hợp lệ. Vui lòng nhập:\n"
                 "- @username cho kênh công khai\n"
-                "- -100xxxxxxxxxx cho kênh riêng tư\n\n"
+                "- Link chia sẻ kênh (ví dụ: https://t.me/channel_name)\n\n"
                 "Hoặc bạn có thể forward một tin nhắn từ kênh đó để đăng ký.\n\n"
                 "Vui lòng thử lại hoặc gõ /cancel để hủy thao tác.",
                 reply_markup=cancel_button
@@ -361,6 +401,14 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
         return WAITING_FOR_CHANNEL
     
     try:
+        # Xử lý link chia sẻ kênh
+        if channel_id.startswith('https://t.me/') or channel_id.startswith('t.me/'):
+            # Lấy username từ link
+            username = channel_id.split('/')[-1]
+            if username.startswith('@'):
+                username = username[1:]
+            channel_id = f"@{username}"
+        
         # Kiểm tra kênh có tồn tại không
         chat = await context.bot.get_chat(channel_id)
         
@@ -405,7 +453,7 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
             )
         
         # Xóa trạng thái đăng ký kênh
-        context.user_data.pop('register_command', None)
+        context.user_data.clear()
     except Exception as e:
         logging.error(f"Error registering channel: {e}")
         if interface_language == "en":
@@ -414,7 +462,7 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
                 f"Possible reasons:\n"
                 f"- The channel does not exist\n"
                 f"- The bot does not have access to the channel\n"
-                f"- The channel ID format is incorrect\n\n"
+                f"- The channel format is incorrect\n\n"
                 f"Please check and try again, or type /cancel to cancel the operation.",
                 reply_markup=cancel_button
             )
@@ -424,7 +472,7 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
                 f"Nguyên nhân có thể là:\n"
                 f"- Kênh không tồn tại\n"
                 f"- Bot không có quyền truy cập kênh\n"
-                f"- ID kênh không đúng định dạng\n\n"
+                f"- Định dạng kênh không đúng\n\n"
                 f"Vui lòng kiểm tra lại và thử lại, hoặc gõ /cancel để hủy thao tác.",
                 reply_markup=cancel_button
             )
@@ -432,44 +480,21 @@ async def register_channel_input(update: Update, context: ContextTypes.DEFAULT_T
     
     return ConversationHandler.END
 
-def is_valid_channel_id(channel_id):
-    """Kiểm tra xem channel_id có đúng định dạng không"""
-    # Kiểm tra định dạng @username
-    if channel_id.startswith('@') and len(channel_id) > 1:
-        return True
-    
-    # Kiểm tra định dạng -100xxxxxxxxxx (ID kênh riêng tư)
-    if re.match(r'^-100\d+$', channel_id):
-        return True
-    
-    # Kiểm tra định dạng số nguyên (ID kênh)
-    if re.match(r'^-?\d+$', channel_id):
-        return True
-    
-    return False
-
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý lệnh /cancel"""
     user_id = update.effective_user.id
     user = db.get_user(user_id)
     interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE) if user else DEFAULT_INTERFACE_LANGUAGE
     
-    # Kiểm tra xem người dùng có đang trong quá trình đăng ký kênh không
-    if context.user_data.get('register_command'):
-        # Xóa trạng thái đăng ký kênh
-        context.user_data.pop('register_command', None)
-        
-        if interface_language == "en":
-            await update.message.reply_text("Channel registration cancelled.")
-        else:
-            await update.message.reply_text("Đã hủy thao tác đăng ký kênh.")
-        
-        return ConversationHandler.END
+    # Xóa tất cả trạng thái
+    context.user_data.clear()
+    
+    if interface_language == "en":
+        await update.message.reply_text("Channel registration cancelled.")
     else:
-        if interface_language == "en":
-            await update.message.reply_text("No active operation to cancel.")
-        else:
-            await update.message.reply_text("Không có thao tác nào đang hoạt động để hủy.")
+        await update.message.reply_text("Đã hủy thao tác đăng ký kênh.")
+    
+    return ConversationHandler.END
 
 async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý lệnh /channels để hiển thị danh sách kênh đã đăng ký"""
@@ -528,9 +553,9 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Tạo nút mở kênh nếu có URL
         if channel_url:
             if interface_language == "en":
-                keyboard.append([InlineKeyboardButton(f"🔗 Open {channel_title}", url=channel_url)])
+                keyboard.append([InlineKeyboardButton("🔗 Open {channel_title}", url=channel_url)])
             else:
-                keyboard.append([InlineKeyboardButton(f"🔗 Mở {channel_title}", url=channel_url)])
+                keyboard.append([InlineKeyboardButton("🔗 Mở {channel_title}", url=channel_url)])
     
     # Thêm nút để chuyển đến chức năng hủy đăng ký
     if interface_language == "en":
@@ -666,4 +691,24 @@ async def unregister_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "*Chọn kênh để hủy đăng ký:*",
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
-            ) 
+            )
+
+async def handle_cancel_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý khi người dùng nhấn nút hủy đăng ký"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Lấy thông tin người dùng
+    user_id = query.from_user.id
+    user = db.get_user(user_id)
+    interface_language = user.get("interface_language", DEFAULT_INTERFACE_LANGUAGE) if user else DEFAULT_INTERFACE_LANGUAGE
+    
+    # Xóa tất cả trạng thái
+    context.user_data.clear()
+    
+    if interface_language == "en":
+        await query.message.reply_text("Channel registration cancelled.")
+    else:
+        await query.message.reply_text("Đã hủy thao tác đăng ký kênh.")
+    
+    return ConversationHandler.END 
