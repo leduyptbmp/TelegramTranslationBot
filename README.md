@@ -1,11 +1,104 @@
-# Bot Dịch Thuật Telegram
+# Bot Dịch Tin Nhắn Telegram
 
-Bot Telegram tự động dịch tin nhắn từ các kênh và bot khác.
+Bot Telegram giúp dịch tin nhắn được chuyển tiếp từ các kênh sang ngôn ngữ mà người dùng chọn và gửi trực tiếp đến chat riêng.
+
+## Chức năng chính
+
+### 1. Dịch tin nhắn
+- Tự động dịch tin nhắn từ kênh sang ngôn ngữ đã chọn
+- Hỗ trợ dịch:
+  - Tin nhắn văn bản
+  - Chú thích của hình ảnh (caption)
+  - Chú thích của video (caption)
+
+### 2. Cài đặt ngôn ngữ
+- `/setlang` - Cài đặt ngôn ngữ dịch (ngôn ngữ đích)
+- `/setinterfacelang` - Cài đặt ngôn ngữ giao diện (en/vi)
+
+### 3. Quản lý kênh
+- `/channels` - Xem danh sách kênh đã đăng ký
+- `/unregister` - Hủy đăng ký kênh
+
+### 4. Các lệnh cơ bản
+- `/start` - Bắt đầu sử dụng bot
+- `/help` - Xem hướng dẫn sử dụng
+- `/cancel` - Hủy thao tác hiện tại
+
+## TODO: Đăng ký kênh mới
+- [ ] Thêm hướng dẫn chi tiết cách đăng ký kênh
+- [ ] Liệt kê các phương thức đăng ký kênh được hỗ trợ
+- [ ] Mô tả quy trình xác thực và phân quyền
+- [ ] Thêm ví dụ cụ thể cho từng cách đăng ký
+
+## Cách hoạt động
+
+1. Khi có tin nhắn mới từ kênh: (đang phát triển)
+   - Bot sẽ nhận tin nhắn
+   - Tìm danh sách người dùng đã đăng ký kênh
+   - Nhóm người dùng theo ngôn ngữ đích
+   - Dịch tin nhắn một lần cho mỗi ngôn ngữ
+   - Gửi tin nhắn đã dịch đến chat riêng của từng người dùng
+
+2. Định dạng tin nhắn dịch:
+   ```
+   📢 Tin nhắn mới từ [Tên kênh]
+   
+   Nội dung gốc:
+   [Tin nhắn gốc]
+   
+   Bản dịch:
+   [Nội dung đã dịch]
+   ```
+
+## Cài đặt
+
+1. Yêu cầu:
+   - Python 3.7+
+   - Telegram Bot Token
+   - Các thư viện trong `requirements.txt`
+
+2. Cài đặt:
+   ```bash
+   # Clone repository
+   git clone [URL_repository]
+   
+   # Cài đặt dependencies
+   pip install -r requirements.txt
+   
+   # Tạo file .env và thêm token
+   echo "TELEGRAM_BOT_TOKEN=your_token_here" > .env
+   
+   # Chạy bot
+   python run.py
+   ```
+
+## Cấu trúc thư mục
+
+```
+├── src/
+│   ├── handlers/
+│   │   ├── command_handlers.py
+│   │   ├── message_handlers.py
+│   │   └── callback_handlers.py
+│   ├── config.py
+│   └── main.py
+├── logs/
+│   └── bot.log
+├── .env
+├── requirements.txt
+└── README.md
+```
+
+## Ghi chú
+
+- Bot sử dụng logging để ghi lại các hoạt động
+- Log được lưu trong thư mục `logs/`
+- Cấp độ log mặc định: INFO
 
 ## Tính năng
 
-- Dịch tin nhắn từ các kênh/bot đã đăng ký sang ngôn ngữ đã cài đặt
-- Tự động dịch tin nhắn mới từ các kênh/bot đã đăng ký
+- Dịch tin nhắn từ các kênh/bot đã đăng ký sang ngôn ngữ đã cài đặt (đang phát triển)
+- Tự động dịch tin nhắn mới từ các kênh/bot đã đăng ký (đang phát triển)
 - Forward tin nhắn từ kênh/bot khác để dịch
 - Đăng ký kênh/bot mới thông qua giao diện người dùng
 - Trích xuất và dịch văn bản từ hình ảnh (OCR)
